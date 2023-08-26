@@ -25,6 +25,11 @@ fn main() -> Result<()> {
                 page_size as u32
             };
             println!("database page size: {}", page_size);
+
+            let mut schema_table_page_header = [0u8; 8];
+            file.read_exact(&mut schema_table_page_header)?;
+            let number_of_tables = u16::from_be_bytes(schema_table_page_header[3..5].try_into()?);
+            println!("number of tables: {}", number_of_tables);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

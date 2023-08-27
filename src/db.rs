@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, SeekFrom};
 
 pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
     let mut value: usize = 0;
@@ -43,6 +43,22 @@ pub(crate) fn parse_int(bytes: &[u8]) -> usize {
         value = value << 8 | *byte as usize;
     }
     value
+}
+
+pub(crate) fn get_table_page(database: String, table_name: String) -> Result<Vec<u8>> {
+    let (page_size, _, table_root_pages) = parse_first_page(database.clone())?;
+    let table_root_page = table_root_pages.get(&table_name.clone()).ok_or(anyhow!(
+        "Table {} not found in database {}",
+        table_name,
+        database.clone()
+    ))?;
+    let mut file = File::open(database)?;
+    let mut table_page = vec![0; page_size];
+    file.seek(SeekFrom::Start(
+        page_size as u64 * (*table_root_page as u64 - 1),
+    ))?;
+    file.read_exact(&mut table_page)?;
+    Ok(table_page)
 }
 
 fn get_table_root_pages(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {

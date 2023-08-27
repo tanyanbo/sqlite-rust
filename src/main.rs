@@ -4,10 +4,8 @@ use anyhow::{anyhow, bail, Result};
 use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use std::fs::File;
-use std::io::{prelude::*, SeekFrom};
 
-use crate::db::{parse_first_page, parse_int};
+use crate::db::{get_table_page, parse_first_page, parse_int};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -39,7 +37,7 @@ fn main() -> Result<()> {
         }
         sql => {
             let dialect = GenericDialect {};
-            let ast = Parser::parse_sql(&dialect, sql).unwrap();
+            let ast = Parser::parse_sql(&dialect, sql)?;
             let ast = ast[0].clone();
             let mut column = None;
             let mut table_name = None;
@@ -54,22 +52,10 @@ fn main() -> Result<()> {
                                 column = Some(ident);
                             }
                             Expr::Function(..) => {
-                                let (page_size, _, table_root_pages) =
-                                    parse_first_page(args[1].clone())?;
-                                let table_name = table_name.ok_or(anyhow!("Unsupported query"))?;
-                                let table_root_page =
-                                    table_root_pages.get(&table_name.clone()).ok_or(anyhow!(
-                                        "Table {} not found in database {}",
-                                        table_name,
-                                        args[1]
-                                    ))?;
-
-                                let mut file = File::open(args[1].clone())?;
-                                let mut table_page = vec![0; page_size];
-                                file.seek(SeekFrom::Start(
-                                    page_size as u64 * (*table_root_page as u64 - 1),
-                                ))?;
-                                file.read_exact(&mut table_page)?;
+                                let table_page = get_table_page(
+                                    args[1].clone(),
+                                    table_name.ok_or(anyhow!("Invalid table name"))?,
+                                )?;
                                 let count = parse_int(&table_page[3..5]);
                                 println!("{:?}", count);
                             }

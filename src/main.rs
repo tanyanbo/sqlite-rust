@@ -23,7 +23,40 @@ fn main() -> Result<()> {
             println!("number of tables: {}", number_of_tables);
         }
         ".tables" => {
-            let _schema_page = get_schema_page(args[1].clone())?;
+            let schema_page = get_schema_page(args[1].clone())?;
+            let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
+
+            let mut cell_locations = vec![];
+            for i in 0..number_of_tables as usize {
+                let location = &schema_page[8 + i * 2..8 + i * 2 + 2];
+                let location = (location[0] as usize) << 8 | location[1] as usize;
+                let location = location - 100;
+                cell_locations.push(location);
+            }
+            let cell_locations = cell_locations.into_iter().rev().collect::<Vec<_>>();
+
+            for (index, location) in cell_locations.iter().enumerate() {
+                let end_location = if index == cell_locations.len() - 1 {
+                    schema_page.len()
+                } else {
+                    cell_locations[index + 1]
+                };
+                let cell = &schema_page[*location as usize..end_location as usize];
+                println!("cell.len(): {}", cell.len());
+
+                let mut payload: usize = 0;
+                let mut index = 0;
+                loop {
+                    let cur_value = cell[index] as usize;
+                    let has_more = cur_value & 1 << 8;
+                    payload = payload << 7 | (cur_value & 0b01111111);
+                    println!("payload: {payload}");
+                    if has_more == 0 {
+                        break;
+                    }
+                    index += 1;
+                }
+            }
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

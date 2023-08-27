@@ -35,6 +35,7 @@ fn main() -> Result<()> {
             }
             let cell_locations = cell_locations.into_iter().rev().collect::<Vec<_>>();
 
+            let mut table_names = vec![];
             for (index, location) in cell_locations.iter().enumerate() {
                 let end_location = if index == cell_locations.len() - 1 {
                     schema_page.len()
@@ -60,13 +61,21 @@ fn main() -> Result<()> {
                     cursor += size;
                     header_size -= size;
                 }
-                println!("{:?}", columns);
-                let size = columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
-                println!(
-                    "{:?}",
-                    String::from_utf8_lossy(&cell[cursor..cursor + size])
+                let size_of_first_two_columns =
+                    columns.iter().take(2).fold(0, |acc, v| acc + (v - 13) / 2);
+                let table_name = String::from_utf8_lossy(
+                    &cell[cursor + size_of_first_two_columns
+                        ..cursor + size_of_first_two_columns + (columns[2] - 13) / 2],
                 );
+                table_names.push(table_name);
             }
+
+            let table_names = table_names
+                .into_iter()
+                .filter(|name| !name.starts_with("sqlite_"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!("{:?}", table_names);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

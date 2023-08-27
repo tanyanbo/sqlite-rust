@@ -42,24 +42,30 @@ fn main() -> Result<()> {
                     cell_locations[index + 1]
                 };
                 let cell = &schema_page[*location as usize..end_location as usize];
-                println!("cell.len(): {}", cell.len());
-                let header_size = cell[2] & 0b01111111;
-                let data = &cell[2 + (header_size as usize)..];
 
                 let mut cursor = 0;
 
                 let (_, size) = parse_varint(&cell);
                 cursor += size;
-                let (rowid, size) = parse_varint(&cell[cursor..]);
+                let (_, size) = parse_varint(&cell[cursor..]);
                 cursor += size;
                 let (mut header_size, size) = parse_varint(&cell[cursor..]);
                 cursor += size;
-                header_size-=size;
+                header_size -= size;
 
                 let mut columns = vec![];
-
-                println!("{rowid}");
-                println!("{:?}", header_size);
+                while header_size > 0 {
+                    let (coltype, size) = parse_varint(&cell[cursor..]);
+                    columns.push(coltype);
+                    cursor += size;
+                    header_size -= size;
+                }
+                println!("{:?}", columns);
+                let size = columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
+                println!(
+                    "{:?}",
+                    String::from_utf8_lossy(&cell[cursor..cursor + size])
+                );
             }
         }
         _ => bail!("Missing or invalid command passed: {}", command),

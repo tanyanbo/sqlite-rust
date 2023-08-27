@@ -1,4 +1,4 @@
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct Table {
     pub(crate) r#type: String,
     pub(crate) name: String,

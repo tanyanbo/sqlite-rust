@@ -10,7 +10,7 @@ pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
     let mut index = 0;
     loop {
         let cur_value = cell[index] as usize;
-        let has_more = cur_value & (1 << 8);
+        let has_more = cur_value & (1 << 7);
         value = value << 7 | (cur_value & 0b01111111);
         index += 1;
         if has_more == 0 {
@@ -107,6 +107,7 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
             cursor += size;
             header_size -= size;
         }
+        println!("{:?}", columns);
 
         let type_size = get_data_type(columns[0]).get_content_size();
         let r#type = String::from_utf8_lossy(&cell[cursor..cursor + type_size]);
@@ -120,8 +121,9 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
 
         let rootpage_size = get_data_type(columns[3]).get_content_size();
         let mut rootpage = vec![];
-        for i in 0..rootpage_size {
-            rootpage.push(cell[cursor + i]);
+        for _ in 0..rootpage_size {
+            rootpage.push(cell[cursor]);
+            cursor += 1;
         }
         let rootpage = parse_int(&rootpage);
 

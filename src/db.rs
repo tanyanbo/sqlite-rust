@@ -1,7 +1,50 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
+
+#[derive(Default)]
+pub(crate) struct Table {
+    pub(crate) r#type: String,
+    pub(crate) name: String,
+    pub(crate) tbl_name: String,
+    pub(crate) rootpage: usize,
+    pub(crate) sql: String,
+}
+
+enum ColumnDataType {
+    Null,
+    EightBit,
+    SixteenBit,
+    TwentyFourBit,
+    ThirtyTwoBit,
+    FortyEightBit,
+    SixtyFourBit,
+    Float,
+    IntegerZero,
+    IntegerOne,
+    Text(usize),
+    Blob(usize),
+}
+
+impl ColumnDataType {
+    fn get_content_size(&self) -> usize {
+        match self {
+            ColumnDataType::Null => 0,
+            ColumnDataType::EightBit => 1,
+            ColumnDataType::SixteenBit => 2,
+            ColumnDataType::TwentyFourBit => 3,
+            ColumnDataType::ThirtyTwoBit => 4,
+            ColumnDataType::FortyEightBit => 6,
+            ColumnDataType::SixtyFourBit => 8,
+            ColumnDataType::Float => 8,
+            ColumnDataType::IntegerZero => 0,
+            ColumnDataType::IntegerOne => 0,
+            ColumnDataType::Text(size) => *size,
+            ColumnDataType::Blob(size) => *size,
+        }
+    }
+}
 
 pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
     let mut value: usize = 0;
@@ -71,11 +114,12 @@ fn get_table_columns(table_page: Vec<u8>) -> Result<Vec<String>> {
     Ok(vec![])
 }
 
-fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
+fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
     let cell_addrs = get_cell_addrs(schema_page.to_vec(), 8)?;
 
-    let mut table_root_pages = HashMap::default();
+    let mut table_info = HashMap::default();
     for (index, location) in cell_addrs.iter().enumerate() {
+        let table = Table::default();
         let end_location = if index == cell_addrs.len() - 1 {
             schema_page.len()
         } else {
@@ -111,10 +155,28 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
         let size_of_first_three_columns =
             columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
         let (root_page, _) = parse_varint(&cell[cursor + size_of_first_three_columns..]);
-        table_root_pages.insert(table_name.to_string(), root_page);
+        table_info.insert(table_name.to_string(), root_page);
     }
 
-    Ok(table_root_pages)
+    Ok(table_info)
+}
+
+fn get_data_type(coltype: usize) -> ColumnDataType {
+    match coltype {
+        0 => ColumnDataType::Null,
+        1 => ColumnDataType::EightBit,
+        2 => ColumnDataType::SixteenBit,
+        3 => ColumnDataType::TwentyFourBit,
+        4 => ColumnDataType::ThirtyTwoBit,
+        5 => ColumnDataType::FortyEightBit,
+        6 => ColumnDataType::SixtyFourBit,
+        7 => ColumnDataType::Float,
+        8 => ColumnDataType::IntegerZero,
+        9 => ColumnDataType::IntegerOne,
+        x if x >= 12 && x % 2 == 0 => ColumnDataType::Blob((x - 12) / 2),
+        x if x >= 13 => ColumnDataType::Text((x - 13) / 2),
+        _ => unreachable!("Invalid column type"),
+    }
 }
 
 fn get_cell_addrs(table_page: Vec<u8>, header_size: usize) -> Result<Vec<usize>> {

@@ -18,8 +18,10 @@ pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
     (value, index)
 }
 
-pub(crate) fn parse_first_page(database: String) -> Result<(usize, Vec<u8>)> {
-    let mut file = File::open(database)?;
+pub(crate) fn parse_first_page(
+    database: String,
+) -> Result<(usize, Vec<u8>, HashMap<String, usize>)> {
+    let mut file = File::open(database.clone())?;
     let mut header: [u8; 100] = [0; 100];
     file.read_exact(&mut header)?;
     let page_size = u16::from_be_bytes(header[16..18].try_into()?);
@@ -30,11 +32,12 @@ pub(crate) fn parse_first_page(database: String) -> Result<(usize, Vec<u8>)> {
     };
     let mut schema_page = vec![0; page_size];
     file.read_exact(&mut schema_page)?;
-    Ok((page_size, schema_page))
+
+    let table_root_pages = get_table_root_pages(&schema_page)?;
+    Ok((page_size, schema_page, table_root_pages))
 }
 
-pub(crate) fn get_table_root_pages(database: String) -> Result<HashMap<String, usize>> {
-    let (_, schema_page) = parse_first_page(database)?;
+fn get_table_root_pages(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
     let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
 
     let mut cell_locations = vec![];

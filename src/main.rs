@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
-use crate::db::{get_table_root_pages, parse_first_page, parse_varint};
+use crate::db::parse_first_page;
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -19,23 +19,23 @@ fn main() -> Result<()> {
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-            let (page_size, schema_page) = parse_first_page(args[1].clone())?;
+            let (page_size, schema_page, _) = parse_first_page(args[1].clone())?;
             println!("database page size: {}", page_size);
             let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
             println!("number of tables: {}", number_of_tables);
         }
         ".tables" => {
-            let table_root_pages = get_table_root_pages(args[1].clone())?;
+            let table_root_pages = parse_first_page(args[1].clone())?.2;
             let table_names = table_root_pages
                 .into_iter()
                 .map(|(name, _)| name)
                 .filter(|name| !name.starts_with("sqlite_"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            println!("{:?}", table_names);
+            println!("{}", table_names);
         }
         sql => {
-            let (page_size, _) = parse_first_page(args[1].clone())?;
+            let (page_size, _, _) = parse_first_page(args[1].clone())?;
             let split_sql = sql.split([' ']).collect::<Vec<_>>();
             println!("{:?}", split_sql);
 

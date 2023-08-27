@@ -43,25 +43,44 @@ fn main() -> Result<()> {
                 };
                 let cell = &schema_page[*location as usize..end_location as usize];
                 println!("cell.len(): {}", cell.len());
+                let header_size = cell[2] & 0b01111111;
+                let data = &cell[2 + (header_size as usize)..];
 
-                let mut payload: usize = 0;
-                let mut index = 0;
-                loop {
-                    let cur_value = cell[index] as usize;
-                    let has_more = cur_value & 1 << 8;
-                    payload = payload << 7 | (cur_value & 0b01111111);
-                    println!("payload: {payload}");
-                    if has_more == 0 {
-                        break;
-                    }
-                    index += 1;
-                }
+                let mut cursor = 0;
+
+                let (_, size) = parse_varint(&cell);
+                cursor += size;
+                let (rowid, size) = parse_varint(&cell[cursor..]);
+                cursor += size;
+                let (mut header_size, size) = parse_varint(&cell[cursor..]);
+                cursor += size;
+                header_size-=size;
+
+                let mut columns = vec![];
+
+                println!("{rowid}");
+                println!("{:?}", header_size);
             }
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 
     Ok(())
+}
+
+fn parse_varint(cell: &[u8]) -> (usize, usize) {
+    let mut value: usize = 0;
+    let mut index = 0;
+    loop {
+        let cur_value = cell[index] as usize;
+        let has_more = cur_value & 1 << 8;
+        value = value << 7 | (cur_value & 0b01111111);
+        index += 1;
+        if has_more == 0 {
+            break;
+        }
+    }
+    (value, index)
 }
 
 fn get_page_size(database: String) -> Result<u32> {

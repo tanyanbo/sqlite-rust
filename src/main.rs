@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
-use crate::db::{parse_first_page, parse_varint};
+use crate::db::{get_table_root_pages, parse_first_page, parse_varint};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -25,61 +25,10 @@ fn main() -> Result<()> {
             println!("number of tables: {}", number_of_tables);
         }
         ".tables" => {
-            let (_, schema_page) = parse_first_page(args[1].clone())?;
-            let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
-
-            let mut cell_locations = vec![];
-            for i in 0..number_of_tables as usize {
-                let location = &schema_page[8 + i * 2..8 + i * 2 + 2];
-                let location = (location[0] as usize) << 8 | location[1] as usize;
-                let location = location - 100;
-                cell_locations.push(location);
-            }
-            let cell_locations = cell_locations.into_iter().rev().collect::<Vec<_>>();
-
-            let mut table_names = vec![];
-            for (index, location) in cell_locations.iter().enumerate() {
-                let end_location = if index == cell_locations.len() - 1 {
-                    schema_page.len()
-                } else {
-                    cell_locations[index + 1]
-                };
-                let cell = &schema_page[*location as usize..end_location as usize];
-
-                let mut cursor = 0;
-
-                let (_, size) = parse_varint(&cell);
-                cursor += size;
-                let (_, size) = parse_varint(&cell[cursor..]);
-                cursor += size;
-                let (mut header_size, size) = parse_varint(&cell[cursor..]);
-                cursor += size;
-                header_size -= size;
-
-                let mut columns = vec![];
-                while header_size > 0 {
-                    let (coltype, size) = parse_varint(&cell[cursor..]);
-                    columns.push(coltype);
-                    cursor += size;
-                    header_size -= size;
-                }
-
-                let size_of_first_two_columns =
-                    columns.iter().take(2).fold(0, |acc, v| acc + (v - 13) / 2);
-                let table_name = String::from_utf8_lossy(
-                    &cell[cursor + size_of_first_two_columns
-                        ..cursor + size_of_first_two_columns + (columns[2] - 13) / 2],
-                );
-                table_names.push(table_name);
-
-                let size_of_first_three_columns =
-                    columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
-                let (root_page, _) = parse_varint(&cell[cursor + size_of_first_three_columns..]);
-                println!("{:?}", root_page);
-            }
-
-            let table_names = table_names
+            let table_root_pages = get_table_root_pages(args[1].clone())?;
+            let table_names = table_root_pages
                 .into_iter()
+                .map(|(name, _)| name)
                 .filter(|name| !name.starts_with("sqlite_"))
                 .collect::<Vec<_>>()
                 .join(" ");

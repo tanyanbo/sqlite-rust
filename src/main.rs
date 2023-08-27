@@ -1,6 +1,9 @@
 mod db;
 
 use anyhow::{anyhow, bail, Result};
+use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
@@ -35,26 +38,46 @@ fn main() -> Result<()> {
             println!("{}", table_names);
         }
         sql => {
-            let (page_size, _, table_root_pages) = parse_first_page(args[1].clone())?;
-            let split_sql = sql.split([' ']).collect::<Vec<_>>();
-            let table_name = split_sql
-                .last()
-                .ok_or(anyhow!("Missing table name"))?
-                .replace(";", "");
-            let table_root_page = table_root_pages.get(&table_name).ok_or(anyhow!(
-                "Table {} not found in database {}",
-                table_name,
-                args[1]
-            ))?;
+            let dialect = GenericDialect {};
+            let ast = Parser::parse_sql(&dialect, sql).unwrap();
+            let ast = ast[0].clone();
+            let mut column = None;
+            let mut table_name = None;
+            if let Statement::Query(query) = ast {
+                if let SetExpr::Select(select) = *query.body {
+                    if let TableFactor::Table { name, .. } = &select.from[0].relation {
+                        table_name = Some(name.0[0].value.clone());
+                    }
+                    if let SelectItem::UnnamedExpr(expr) = &select.projection[0] {
+                        match expr {
+                            Expr::Identifier(ident) => {
+                                column = Some(ident);
+                            }
+                            Expr::Function(..) => {
+                                let (page_size, _, table_root_pages) =
+                                    parse_first_page(args[1].clone())?;
+                                let table_name = table_name.ok_or(anyhow!("Unsupported query"))?;
+                                let table_root_page =
+                                    table_root_pages.get(&table_name.clone()).ok_or(anyhow!(
+                                        "Table {} not found in database {}",
+                                        table_name,
+                                        args[1]
+                                    ))?;
 
-            let mut file = File::open(args[1].clone())?;
-            let mut table_page = vec![0; page_size];
-            file.seek(SeekFrom::Start(
-                page_size as u64 * (*table_root_page as u64 - 1),
-            ))?;
-            file.read_exact(&mut table_page)?;
-            let count = parse_int(&table_page[3..5]);
-            println!("{:?}", count);
+                                let mut file = File::open(args[1].clone())?;
+                                let mut table_page = vec![0; page_size];
+                                file.seek(SeekFrom::Start(
+                                    page_size as u64 * (*table_root_page as u64 - 1),
+                                ))?;
+                                file.read_exact(&mut table_page)?;
+                                let count = parse_int(&table_page[3..5]);
+                                println!("{:?}", count);
+                            }
+                            _ => bail!("Unsupported expression type"),
+                        }
+                    }
+                }
+            }
         }
     }
 

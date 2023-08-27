@@ -1,6 +1,6 @@
 mod db;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
@@ -35,15 +35,25 @@ fn main() -> Result<()> {
             println!("{}", table_names);
         }
         sql => {
-            let (page_size, _, _) = parse_first_page(args[1].clone())?;
+            let (page_size, _, table_root_pages) = parse_first_page(args[1].clone())?;
             let split_sql = sql.split([' ']).collect::<Vec<_>>();
-            println!("{:?}", split_sql);
+            let table_name = split_sql
+                .last()
+                .ok_or(anyhow!("Missing table name"))?
+                .replace(";", "");
+            let table_root_page = table_root_pages.get(&table_name).ok_or(anyhow!(
+                "Table {} not found in database {}",
+                table_name,
+                args[1]
+            ))?;
 
             let mut file = File::open(args[1].clone())?;
-            let mut fourth_page = vec![0; page_size];
-            file.seek(SeekFrom::Start(page_size as u64 * 3))?;
-            file.read_exact(&mut fourth_page)?;
-            println!("{:?}", &fourth_page[..8]);
+            let mut table_page = vec![0; page_size];
+            file.seek(SeekFrom::Start(
+                page_size as u64 * (*table_root_page as u64 - 1),
+            ))?;
+            file.read_exact(&mut table_page)?;
+            println!("{:?}", &table_page[..8]);
         }
     }
 

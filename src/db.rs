@@ -37,6 +37,14 @@ pub(crate) fn parse_first_page(
     Ok((page_size, schema_page, table_root_pages))
 }
 
+pub(crate) fn parse_int(bytes: &[u8]) -> usize {
+    let mut value: usize = 0;
+    for byte in bytes {
+        value = value << 8 | *byte as usize;
+    }
+    value
+}
+
 fn get_table_root_pages(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
     let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
 

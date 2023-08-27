@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
-use crate::db::parse_first_page;
+use crate::db::{parse_first_page, parse_int};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -53,7 +53,8 @@ fn main() -> Result<()> {
                 page_size as u64 * (*table_root_page as u64 - 1),
             ))?;
             file.read_exact(&mut table_page)?;
-            println!("{:?}", &table_page[..8]);
+            let count = parse_int(&table_page[3..5]);
+            println!("{:?}", count);
         }
     }
 

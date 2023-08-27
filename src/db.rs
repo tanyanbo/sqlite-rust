@@ -1,50 +1,9 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
-#[derive(Default)]
-pub(crate) struct Table {
-    pub(crate) r#type: String,
-    pub(crate) name: String,
-    pub(crate) tbl_name: String,
-    pub(crate) rootpage: usize,
-    pub(crate) sql: String,
-}
-
-enum ColumnDataType {
-    Null,
-    EightBit,
-    SixteenBit,
-    TwentyFourBit,
-    ThirtyTwoBit,
-    FortyEightBit,
-    SixtyFourBit,
-    Float,
-    IntegerZero,
-    IntegerOne,
-    Text(usize),
-    Blob(usize),
-}
-
-impl ColumnDataType {
-    fn get_content_size(&self) -> usize {
-        match self {
-            ColumnDataType::Null => 0,
-            ColumnDataType::EightBit => 1,
-            ColumnDataType::SixteenBit => 2,
-            ColumnDataType::TwentyFourBit => 3,
-            ColumnDataType::ThirtyTwoBit => 4,
-            ColumnDataType::FortyEightBit => 6,
-            ColumnDataType::SixtyFourBit => 8,
-            ColumnDataType::Float => 8,
-            ColumnDataType::IntegerZero => 0,
-            ColumnDataType::IntegerOne => 0,
-            ColumnDataType::Text(size) => *size,
-            ColumnDataType::Blob(size) => *size,
-        }
-    }
-}
+use crate::structs::{get_data_type, Table};
 
 pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
     let mut value: usize = 0;
@@ -63,7 +22,7 @@ pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
 
 pub(crate) fn parse_first_page(
     database: String,
-) -> Result<(usize, Vec<u8>, HashMap<String, usize>)> {
+) -> Result<(usize, Vec<u8>, HashMap<String, Table>)> {
     let mut file = File::open(database.clone())?;
     let mut header: [u8; 100] = [0; 100];
     file.read_exact(&mut header)?;
@@ -89,16 +48,19 @@ pub(crate) fn parse_int(bytes: &[u8]) -> usize {
 }
 
 pub(crate) fn get_table_page(database: String, table_name: String) -> Result<Vec<u8>> {
-    let (page_size, _, table_root_pages) = parse_first_page(database.clone())?;
-    let table_root_page = table_root_pages.get(&table_name.clone()).ok_or(anyhow!(
-        "Table {} not found in database {}",
-        table_name,
-        database.clone()
-    ))?;
+    let (page_size, _, table_info) = parse_first_page(database.clone())?;
+    let table_root_page = table_info
+        .get(&table_name.clone())
+        .ok_or(anyhow!(
+            "Table {} not found in database {}",
+            table_name,
+            database.clone()
+        ))?
+        .rootpage;
     let mut file = File::open(database)?;
     let mut table_page = vec![0; page_size];
     file.seek(SeekFrom::Start(
-        page_size as u64 * (*table_root_page as u64 - 1),
+        page_size as u64 * (table_root_page as u64 - 1),
     ))?;
     file.read_exact(&mut table_page)?;
     Ok(table_page)
@@ -119,7 +81,7 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
 
     let mut table_info = HashMap::default();
     for (index, location) in cell_addrs.iter().enumerate() {
-        let table = Table::default();
+        let mut table = Table::default();
         let end_location = if index == cell_addrs.len() - 1 {
             schema_page.len()
         } else {
@@ -146,37 +108,36 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
             header_size -= size;
         }
 
-        let size_of_first_two_columns = columns.iter().take(2).fold(0, |acc, v| acc + (v - 13) / 2);
-        let table_name = String::from_utf8_lossy(
-            &cell[cursor + size_of_first_two_columns
-                ..cursor + size_of_first_two_columns + (columns[2] - 13) / 2],
-        );
+        let type_size = get_data_type(columns[0]).get_content_size();
+        let r#type = String::from_utf8_lossy(&cell[cursor..cursor + type_size]);
+        cursor += type_size;
+        let name_size = get_data_type(columns[1]).get_content_size();
+        let name = String::from_utf8_lossy(&cell[cursor..cursor + name_size]);
+        cursor += name_size;
+        let tbl_name_size = get_data_type(columns[2]).get_content_size();
+        let tbl_name = String::from_utf8_lossy(&cell[cursor..cursor + tbl_name_size]);
+        cursor += tbl_name_size;
 
-        let size_of_first_three_columns =
-            columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
-        let (root_page, _) = parse_varint(&cell[cursor + size_of_first_three_columns..]);
-        table_info.insert(table_name.to_string(), root_page);
+        let rootpage_size = get_data_type(columns[3]).get_content_size();
+        let mut rootpage = vec![];
+        for i in 0..rootpage_size {
+            rootpage.push(cell[cursor + i]);
+        }
+        let rootpage = parse_int(&rootpage);
+
+        let sql_size = get_data_type(columns[4]).get_content_size();
+        let sql = String::from_utf8_lossy(&cell[cursor..cursor + sql_size]);
+
+        table.r#type = r#type.to_string();
+        table.name = name.to_string();
+        table.tbl_name = tbl_name.to_string();
+        table.rootpage = rootpage;
+        table.sql = sql.to_string();
+
+        table_info.insert(tbl_name.to_string(), table);
     }
 
     Ok(table_info)
-}
-
-fn get_data_type(coltype: usize) -> ColumnDataType {
-    match coltype {
-        0 => ColumnDataType::Null,
-        1 => ColumnDataType::EightBit,
-        2 => ColumnDataType::SixteenBit,
-        3 => ColumnDataType::TwentyFourBit,
-        4 => ColumnDataType::ThirtyTwoBit,
-        5 => ColumnDataType::FortyEightBit,
-        6 => ColumnDataType::SixtyFourBit,
-        7 => ColumnDataType::Float,
-        8 => ColumnDataType::IntegerZero,
-        9 => ColumnDataType::IntegerOne,
-        x if x >= 12 && x % 2 == 0 => ColumnDataType::Blob((x - 12) / 2),
-        x if x >= 13 => ColumnDataType::Text((x - 13) / 2),
-        _ => unreachable!("Invalid column type"),
-    }
 }
 
 fn get_cell_addrs(table_page: Vec<u8>, header_size: usize) -> Result<Vec<usize>> {

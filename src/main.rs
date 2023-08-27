@@ -1,4 +1,5 @@
 mod db;
+mod structs;
 
 use anyhow::{anyhow, bail, Result};
 use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};

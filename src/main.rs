@@ -61,6 +61,7 @@ fn main() -> Result<()> {
                     cursor += size;
                     header_size -= size;
                 }
+
                 let size_of_first_two_columns =
                     columns.iter().take(2).fold(0, |acc, v| acc + (v - 13) / 2);
                 let table_name = String::from_utf8_lossy(
@@ -68,6 +69,11 @@ fn main() -> Result<()> {
                         ..cursor + size_of_first_two_columns + (columns[2] - 13) / 2],
                 );
                 table_names.push(table_name);
+
+                let size_of_first_three_columns =
+                    columns.iter().take(3).fold(0, |acc, v| acc + (v - 13) / 2);
+                let (root_page, _) = parse_varint(&cell[cursor + size_of_first_three_columns..]);
+                println!("{:?}", root_page);
             }
 
             let table_names = table_names

@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, SeekFrom};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -81,7 +81,17 @@ fn main() -> Result<()> {
                 .join(" ");
             println!("{:?}", table_names);
         }
-        _ => bail!("Missing or invalid command passed: {}", command),
+        sql => {
+            let (page_size, _) = parse_first_page(args[1].clone())?;
+            let split_sql = sql.split([' ']).collect::<Vec<_>>();
+            println!("{:?}", split_sql);
+
+            let mut file = File::open(args[1].clone())?;
+            let mut fourth_page = vec![0; page_size];
+            file.seek(SeekFrom::Start(page_size as u64 * 3))?;
+            file.read_exact(&mut fourth_page)?;
+            println!("{:?}", &fourth_page[..8]);
+        }
     }
 
     Ok(())
@@ -92,7 +102,7 @@ fn parse_varint(cell: &[u8]) -> (usize, usize) {
     let mut index = 0;
     loop {
         let cur_value = cell[index] as usize;
-        let has_more = cur_value & 1 << 8;
+        let has_more = cur_value & (1 << 8);
         value = value << 7 | (cur_value & 0b01111111);
         index += 1;
         if has_more == 0 {

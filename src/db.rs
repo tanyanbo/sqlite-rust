@@ -33,7 +33,7 @@ pub(crate) fn parse_first_page(
     let mut schema_page = vec![0; page_size];
     file.read_exact(&mut schema_page)?;
 
-    let table_root_pages = get_table_root_pages(&schema_page)?;
+    let table_root_pages = get_table_info(&schema_page)?;
     Ok((page_size, schema_page, table_root_pages))
 }
 
@@ -61,26 +61,28 @@ pub(crate) fn get_table_page(database: String, table_name: String) -> Result<Vec
     Ok(table_page)
 }
 
-fn get_table_root_pages(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
-    let number_of_tables = u16::from_be_bytes(schema_page[3..5].try_into()?);
+pub(crate) fn get_columns(table_page: Vec<u8>, columns: Vec<String>) -> Result<Vec<String>> {
+    let _cell_addrs = get_cell_addrs(table_page, 8)?;
+    let create_sql = "".to_string();
+    Ok(vec![])
+}
 
-    let mut cell_locations = vec![];
-    for i in 0..number_of_tables as usize {
-        let location = &schema_page[8 + i * 2..8 + i * 2 + 2];
-        let location = (location[0] as usize) << 8 | location[1] as usize;
-        let location = location - 100;
-        cell_locations.push(location);
-    }
-    let cell_locations = cell_locations.into_iter().rev().collect::<Vec<_>>();
+fn get_table_columns(table_page: Vec<u8>) -> Result<Vec<String>> {
+    Ok(vec![])
+}
+
+fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>> {
+    let cell_addrs = get_cell_addrs(schema_page.to_vec(), 8)?;
 
     let mut table_root_pages = HashMap::default();
-    for (index, location) in cell_locations.iter().enumerate() {
-        let end_location = if index == cell_locations.len() - 1 {
+    for (index, location) in cell_addrs.iter().enumerate() {
+        let end_location = if index == cell_addrs.len() - 1 {
             schema_page.len()
         } else {
-            cell_locations[index + 1]
+            cell_addrs[index + 1]
         };
         let cell = &schema_page[*location as usize..end_location as usize];
+        println!("{:?}", &cell[..10]);
 
         let mut cursor = 0;
 
@@ -113,4 +115,16 @@ fn get_table_root_pages(schema_page: &Vec<u8>) -> Result<HashMap<String, usize>>
     }
 
     Ok(table_root_pages)
+}
+
+fn get_cell_addrs(table_page: Vec<u8>, header_size: usize) -> Result<Vec<usize>> {
+    let number_of_cells = u16::from_be_bytes(table_page[3..5].try_into()?);
+    let mut cell_locations = vec![];
+    for i in 0..number_of_cells as usize {
+        let location = &table_page[header_size + i * 2..header_size + i * 2 + 2];
+        let location = (location[0] as usize) << 8 | location[1] as usize;
+        let location = location - 100;
+        cell_locations.push(location);
+    }
+    Ok(cell_locations.into_iter().rev().collect::<Vec<_>>())
 }

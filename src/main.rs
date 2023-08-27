@@ -47,15 +47,18 @@ fn main() -> Result<()> {
                         table_name = Some(name.0[0].value.clone());
                     }
                     if let SelectItem::UnnamedExpr(expr) = &select.projection[0] {
+                        let table_page = get_table_page(
+                            args[1].clone(),
+                            table_name.ok_or(anyhow!("Invalid table name"))?,
+                        )?;
                         match expr {
                             Expr::Identifier(ident) => {
                                 column = Some(ident);
+                                if table_page[0] != 0x1d {
+                                    bail!("Unsupported table type");
+                                }
                             }
                             Expr::Function(..) => {
-                                let table_page = get_table_page(
-                                    args[1].clone(),
-                                    table_name.ok_or(anyhow!("Invalid table name"))?,
-                                )?;
                                 let count = parse_int(&table_page[3..5]);
                                 println!("{:?}", count);
                             }

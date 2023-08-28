@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
 
+use crate::ast::get_columns_from_create_table_sql;
 use crate::structs::{get_data_type, Table};
 
 pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
@@ -77,8 +78,7 @@ pub(crate) fn get_columns(database: &String, table_name: &String) -> Result<Vec<
         ))?
         .sql
         .clone();
-    println!("{}", sql);
-    Ok(vec![])
+    Ok(get_columns_from_create_table_sql(&sql)?)
 }
 
 fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {

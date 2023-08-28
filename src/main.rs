@@ -1,3 +1,4 @@
+mod ast;
 mod db;
 mod structs;
 
@@ -41,7 +42,6 @@ fn main() -> Result<()> {
             let dialect = GenericDialect {};
             let ast = Parser::parse_sql(&dialect, sql)?;
             let ast = ast[0].clone();
-            let mut column = None;
             let mut table_name = None;
             if let Statement::Query(query) = ast {
                 if let SetExpr::Select(select) = *query.body {
@@ -53,11 +53,18 @@ fn main() -> Result<()> {
                         let table_page = get_table_page(&args[1], &table_name)?;
                         match expr {
                             Expr::Identifier(ident) => {
-                                column = Some(ident);
-                                if table_page[0] != 0x1d {
+                                if table_page[0] != 0x0d {
                                     bail!("Unsupported table type");
                                 }
-                                get_columns(&args[1], &table_name)?;
+                                let columns = get_columns(&args[1], &table_name)?;
+                                let column_idx = columns
+                                    .iter()
+                                    .position(|c| **c == ident.value)
+                                    .ok_or(anyhow!(
+                                        "Column {} not found in table {}",
+                                        ident.value,
+                                        table_name
+                                    ))?;
                             }
                             Expr::Function(..) => {
                                 let count = parse_int(&table_page[3..5]);

@@ -3,7 +3,7 @@ mod db;
 mod structs;
 
 use anyhow::{anyhow, bail, Result};
-use db::get_columns;
+use db::{get_columns, get_table_columns_data};
 use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -59,12 +59,14 @@ fn main() -> Result<()> {
                                 let columns = get_columns(&args[1], &table_name)?;
                                 let column_idx = columns
                                     .iter()
-                                    .position(|c| **c == ident.value)
+                                    .position(|c| *c == ident.value)
                                     .ok_or(anyhow!(
                                         "Column {} not found in table {}",
                                         ident.value,
                                         table_name
                                     ))?;
+                                let data = get_table_columns_data(&table_page, vec![column_idx])?;
+                                println!("{}", data.join("\n"));
                             }
                             Expr::Function(..) => {
                                 let count = parse_int(&table_page[3..5]);

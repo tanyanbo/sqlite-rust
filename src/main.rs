@@ -48,33 +48,42 @@ fn main() -> Result<()> {
                     if let TableFactor::Table { name, .. } = &select.from[0].relation {
                         table_name = Some(name.0[0].value.clone());
                     }
-                    if let SelectItem::UnnamedExpr(expr) = &select.projection[0] {
-                        let table_name = table_name.ok_or(anyhow!("Invalid table name"))?;
-                        let table_page = get_table_page(&args[1], &table_name)?;
-                        match expr {
-                            Expr::Identifier(ident) => {
-                                if table_page[0] != 0x0d {
-                                    bail!("Unsupported table type");
+
+                    let table_name = table_name.ok_or(anyhow!("Invalid table name"))?;
+                    let columns = get_columns(&args[1], &table_name)?;
+                    let table_page = get_table_page(&args[1], &table_name)?;
+                    let mut column_indexes: Vec<usize> = vec![];
+                    for item in &select.projection {
+                        if let SelectItem::UnnamedExpr(expr) = &item {
+                            match expr {
+                                Expr::Identifier(ident) => {
+                                    if table_page[0] != 0x0d {
+                                        bail!("Unsupported table type");
+                                    }
+                                    let column_idx = columns
+                                        .iter()
+                                        .position(|c| *c == ident.value)
+                                        .ok_or(anyhow!(
+                                            "Column {} not found in table {}",
+                                            ident.value,
+                                            table_name
+                                        ))?;
+                                    column_indexes.push(column_idx);
                                 }
-                                let columns = get_columns(&args[1], &table_name)?;
-                                let column_idx = columns
-                                    .iter()
-                                    .position(|c| *c == ident.value)
-                                    .ok_or(anyhow!(
-                                        "Column {} not found in table {}",
-                                        ident.value,
-                                        table_name
-                                    ))?;
-                                let data = get_table_columns_data(&table_page, vec![column_idx])?;
-                                println!("{}", data.join("\n"));
+                                Expr::Function(..) => {
+                                    let count = parse_int(&table_page[3..5]);
+                                    println!("count: {}", count);
+                                    return Ok(());
+                                }
+                                _ => bail!("Unsupported expression type"),
                             }
-                            Expr::Function(..) => {
-                                let count = parse_int(&table_page[3..5]);
-                                println!("count: {}", count);
-                            }
-                            _ => bail!("Unsupported expression type"),
                         }
                     }
+                    let data = get_table_columns_data(&table_page, column_indexes)?
+                        .iter()
+                        .map(|row| row.join("|"))
+                        .collect::<Vec<_>>();
+                    println!("{}", data.join("\n"));
                 }
             }
         }

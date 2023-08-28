@@ -84,11 +84,12 @@ pub(crate) fn get_columns(database: &String, table_name: &String) -> Result<Vec<
 pub(crate) fn get_table_columns_data(
     table_page: &Vec<u8>,
     column_indexes: Vec<usize>,
-) -> Result<Vec<String>> {
-    let mut result = vec![];
+) -> Result<Vec<Vec<String>>> {
+    let mut result: Vec<Vec<String>> = vec![];
 
     let cell_addrs = get_cell_addrs(table_page, 8)?;
     for (index, location) in cell_addrs.iter().enumerate() {
+        result.push(vec![]);
         let end_location = if index == cell_addrs.len() - 1 {
             table_page.len()
         } else {
@@ -109,18 +110,18 @@ pub(crate) fn get_table_columns_data(
         let mut columns = vec![];
         while header_size > 0 {
             let (coltype, size) = parse_varint(&cell[cursor..]);
-            // println!("coltype: {}, size: {}", coltype, size);
             columns.push(coltype);
             cursor += size;
             header_size -= size;
         }
 
         for (index, column) in columns.iter().enumerate() {
-            if !column_indexes.contains(&index) {
-                continue;
-            }
             let data_type = get_data_type(*column);
             let data_size = data_type.get_content_size();
+            if !column_indexes.contains(&index) {
+                cursor += data_size;
+                continue;
+            }
 
             let data = match data_type {
                 ColumnDataType::EightBit
@@ -140,7 +141,8 @@ pub(crate) fn get_table_columns_data(
                 | ColumnDataType::IntegerZero
                 | ColumnDataType::Blob(..) => unimplemented!("Data type not implemented"),
             };
-            result.push(data);
+            let len = result.len() - 1;
+            result[len].push(data);
             cursor += data_size;
         }
     }

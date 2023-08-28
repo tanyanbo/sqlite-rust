@@ -21,7 +21,7 @@ pub(crate) fn parse_varint(cell: &[u8]) -> (usize, usize) {
 }
 
 pub(crate) fn parse_first_page(
-    database: String,
+    database: &String,
 ) -> Result<(usize, Vec<u8>, HashMap<String, Table>)> {
     let mut file = File::open(database.clone())?;
     let mut header: [u8; 100] = [0; 100];
@@ -47,8 +47,8 @@ pub(crate) fn parse_int(bytes: &[u8]) -> usize {
     value
 }
 
-pub(crate) fn get_table_page(database: String, table_name: String) -> Result<Vec<u8>> {
-    let (page_size, _, table_info) = parse_first_page(database.clone())?;
+pub(crate) fn get_table_page(database: &String, table_name: &String) -> Result<Vec<u8>> {
+    let (page_size, _, table_info) = parse_first_page(database)?;
     let table_root_page = table_info
         .get(&table_name.clone())
         .ok_or(anyhow!(
@@ -66,13 +66,18 @@ pub(crate) fn get_table_page(database: String, table_name: String) -> Result<Vec
     Ok(table_page)
 }
 
-pub(crate) fn get_columns(table_page: Vec<u8>, columns: Vec<String>) -> Result<Vec<String>> {
-    let _cell_addrs = get_cell_addrs(table_page, 8)?;
-    let create_sql = "".to_string();
-    Ok(vec![])
-}
-
-fn get_table_columns(table_page: Vec<u8>) -> Result<Vec<String>> {
+pub(crate) fn get_columns(database: &String, table_name: &String) -> Result<Vec<String>> {
+    let (_, schema_page, _) = parse_first_page(database)?;
+    let sql = get_table_info(&schema_page)?
+        .get(table_name)
+        .ok_or(anyhow!(
+            "Column {} not found in database {}",
+            table_name,
+            database
+        ))?
+        .sql
+        .clone();
+    println!("{}", sql);
     Ok(vec![])
 }
 
@@ -88,7 +93,6 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
             cell_addrs[index + 1]
         };
         let cell = &schema_page[*location as usize..end_location as usize];
-        println!("{:?}", &cell[..10]);
 
         let mut cursor = 0;
 
@@ -107,7 +111,6 @@ fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {
             cursor += size;
             header_size -= size;
         }
-        println!("{:?}", columns);
 
         let type_size = get_data_type(columns[0]).get_content_size();
         let r#type = String::from_utf8_lossy(&cell[cursor..cursor + type_size]);

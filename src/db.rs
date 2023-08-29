@@ -226,5 +226,9 @@ fn get_cell_addrs(table_page: &Vec<u8>, header_size: usize) -> Result<Vec<usize>
         let location = location;
         cell_locations.push(location);
     }
-    Ok(cell_locations.into_iter().rev().collect::<Vec<_>>())
+    if cell_locations.len() > 1 && cell_locations[0] > cell_locations[1] {
+        Ok(cell_locations.into_iter().rev().collect::<Vec<_>>())
+    } else {
+        Ok(cell_locations)
+    }
 }

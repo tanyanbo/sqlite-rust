@@ -50,16 +50,18 @@ fn main() -> Result<()> {
                     }
 
                     let table_name = table_name.ok_or(anyhow!("Invalid table name"))?;
-                    let columns = get_columns(&args[1], &table_name)?;
                     let table_page = get_table_page(&args[1], &table_name)?;
+                    if table_page[0] != 0x0d {
+                        bail!("Unsupported table type");
+                    }
+
+                    let columns = get_columns(&args[1], &table_name)?;
                     let mut column_indexes: Vec<usize> = vec![];
+
                     for item in &select.projection {
                         if let SelectItem::UnnamedExpr(expr) = &item {
                             match expr {
                                 Expr::Identifier(ident) => {
-                                    if table_page[0] != 0x0d {
-                                        bail!("Unsupported table type");
-                                    }
                                     let column_idx = columns
                                         .iter()
                                         .position(|c| *c == ident.value)

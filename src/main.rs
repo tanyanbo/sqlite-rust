@@ -8,7 +8,12 @@ use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::db::{get_table_page, get_table_rootpage, parse_first_page};
+use crate::db::{get_table_page, get_table_rootpage, parse_first_page, parse_int};
+
+enum QueryType {
+    Count,
+    Select,
+}
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -56,6 +61,7 @@ fn main() -> Result<()> {
                     let (table_rootpage, rootpage_number) =
                         get_table_rootpage(&args[1], &table_name)?;
                     let table_pages = get_table_pages(&table_rootpage, rootpage_number)?;
+                    let mut query_type = QueryType::Select;
 
                     for item in &select.projection {
                         if let SelectItem::UnnamedExpr(expr) = &item {
@@ -72,6 +78,7 @@ fn main() -> Result<()> {
                                     column_indexes.push(column_idx);
                                 }
                                 Expr::Function(..) => {
+                                    query_type = QueryType::Count;
                                     // let count = parse_int(&page[3..5]);
                                     // println!("count: {}", count);
                                     // return Ok(());
@@ -81,14 +88,22 @@ fn main() -> Result<()> {
                         }
                     }
 
+                    let mut count = 0;
                     for page_number in table_pages {
                         let page = get_table_page(&args[1], page_number)?;
-
+                        if let QueryType::Count = query_type {
+                            count += parse_int(&page[3..5]);
+                            continue;
+                        }
                         let data = get_table_columns_data(&page, &column_indexes)?
                             .iter()
                             .map(|row| row.join("|"))
                             .collect::<Vec<_>>();
                         println!("{}", data.join("\n"));
+                    }
+
+                    if let QueryType::Count = query_type {
+                        println!("{:?}", count);
                     }
                 }
             }

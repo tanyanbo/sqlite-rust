@@ -1,5 +1,4 @@
-use anyhow::{anyhow, bail, Result};
-use sqlparser::ast::{Expr, Select, SelectItem};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
@@ -92,6 +91,15 @@ pub(crate) fn get_table_pages(rootpage: &Vec<u8>, rootpage_number: usize) -> Res
     unimplemented!("indexes are not yet supported");
 }
 
+pub(crate) fn get_table_page(database: &String, page_number: usize) -> Result<Vec<u8>> {
+    let (page_size, _, _) = parse_first_page(database)?;
+    let mut file = File::open(database)?;
+    let mut table_page = vec![0; page_size];
+    file.seek(SeekFrom::Start(page_size as u64 * (page_number as u64 - 1)))?;
+    file.read_exact(&mut table_page)?;
+    Ok(table_page)
+}
+
 pub(crate) fn get_columns(database: &String, table_name: &String) -> Result<Vec<String>> {
     let (_, schema_page, _) = parse_first_page(database)?;
     let sql = get_table_info(&schema_page)?
@@ -108,7 +116,7 @@ pub(crate) fn get_columns(database: &String, table_name: &String) -> Result<Vec<
 
 pub(crate) fn get_table_columns_data(
     table_page: &Vec<u8>,
-    column_indexes: Vec<usize>,
+    column_indexes: &Vec<usize>,
 ) -> Result<Vec<Vec<String>>> {
     let mut result: Vec<Vec<String>> = vec![];
 
@@ -173,48 +181,6 @@ pub(crate) fn get_table_columns_data(
     }
 
     Ok(result)
-}
-
-pub(crate) fn select_statement(
-    database: &String,
-    table_name: &String,
-    select: Box<Select>,
-    table_page: &Vec<u8>,
-) -> Result<()> {
-    let columns = get_columns(database, &table_name)?;
-    let mut column_indexes: Vec<usize> = vec![];
-
-    for item in &select.projection {
-        if let SelectItem::UnnamedExpr(expr) = &item {
-            match expr {
-                Expr::Identifier(ident) => {
-                    let column_idx =
-                        columns
-                            .iter()
-                            .position(|c| *c == ident.value)
-                            .ok_or(anyhow!(
-                                "Column {} not found in table {}",
-                                ident.value,
-                                table_name
-                            ))?;
-                    column_indexes.push(column_idx);
-                }
-                Expr::Function(..) => {
-                    let count = parse_int(&table_page[3..5]);
-                    println!("count: {}", count);
-                    return Ok(());
-                }
-                _ => bail!("Unsupported expression type"),
-            }
-        }
-    }
-    let data = get_table_columns_data(&table_page, column_indexes)?
-        .iter()
-        .map(|row| row.join("|"))
-        .collect::<Vec<_>>();
-    println!("{}", data.join("\n"));
-
-    Ok(())
 }
 
 fn get_table_info(schema_page: &Vec<u8>) -> Result<HashMap<String, Table>> {

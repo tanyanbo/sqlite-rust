@@ -8,7 +8,7 @@ use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::db::{get_table_rootpage, parse_first_page, parse_int};
+use crate::db::{get_table_page, get_table_rootpage, parse_first_page};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -55,34 +55,36 @@ fn main() -> Result<()> {
 
                     let (table_rootpage, rootpage_number) =
                         get_table_rootpage(&args[1], &table_name)?;
-                    let table_pages = get_table_pages(&table_rootpage, rootpage_number);
-                    println!("{:?}", table_pages);
+                    let table_pages = get_table_pages(&table_rootpage, rootpage_number)?;
 
-                    if table_rootpage[0] == 0x0d {
-                        for item in &select.projection {
-                            if let SelectItem::UnnamedExpr(expr) = &item {
-                                match expr {
-                                    Expr::Identifier(ident) => {
-                                        let column_idx = columns
-                                            .iter()
-                                            .position(|c| *c == ident.value)
-                                            .ok_or(anyhow!(
-                                                "Column {} not found in table {}",
-                                                ident.value,
-                                                table_name
-                                            ))?;
-                                        column_indexes.push(column_idx);
-                                    }
-                                    Expr::Function(..) => {
-                                        let count = parse_int(&table_rootpage[3..5]);
-                                        println!("count: {}", count);
-                                        return Ok(());
-                                    }
-                                    _ => bail!("Unsupported expression type"),
+                    for item in &select.projection {
+                        if let SelectItem::UnnamedExpr(expr) = &item {
+                            match expr {
+                                Expr::Identifier(ident) => {
+                                    let column_idx = columns
+                                        .iter()
+                                        .position(|c| *c == ident.value)
+                                        .ok_or(anyhow!(
+                                            "Column {} not found in table {}",
+                                            ident.value,
+                                            table_name
+                                        ))?;
+                                    column_indexes.push(column_idx);
                                 }
+                                Expr::Function(..) => {
+                                    // let count = parse_int(&page[3..5]);
+                                    // println!("count: {}", count);
+                                    // return Ok(());
+                                }
+                                _ => bail!("Unsupported expression type"),
                             }
                         }
-                        let data = get_table_columns_data(&table_rootpage, column_indexes)?
+                    }
+
+                    for page_number in table_pages {
+                        let page = get_table_page(&args[1], page_number)?;
+
+                        let data = get_table_columns_data(&page, &column_indexes)?
                             .iter()
                             .map(|row| row.join("|"))
                             .collect::<Vec<_>>();

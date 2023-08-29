@@ -3,12 +3,12 @@ mod db;
 mod structs;
 
 use anyhow::{anyhow, bail, Result};
-use db::{get_columns, get_table_columns_data};
+use db::{get_columns, get_table_columns_data, get_table_pages};
 use sqlparser::ast::{Expr, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::db::{get_table_page, parse_first_page, parse_int};
+use crate::db::{get_table_rootpage, parse_first_page, parse_int};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -50,42 +50,44 @@ fn main() -> Result<()> {
                     }
 
                     let table_name = table_name.ok_or(anyhow!("Invalid table name"))?;
-                    let table_page = get_table_page(&args[1], &table_name)?;
-                    if table_page[0] != 0x0d {
-                        bail!("Unsupported table type");
-                    }
-
                     let columns = get_columns(&args[1], &table_name)?;
                     let mut column_indexes: Vec<usize> = vec![];
 
-                    for item in &select.projection {
-                        if let SelectItem::UnnamedExpr(expr) = &item {
-                            match expr {
-                                Expr::Identifier(ident) => {
-                                    let column_idx = columns
-                                        .iter()
-                                        .position(|c| *c == ident.value)
-                                        .ok_or(anyhow!(
-                                            "Column {} not found in table {}",
-                                            ident.value,
-                                            table_name
-                                        ))?;
-                                    column_indexes.push(column_idx);
+                    let (table_rootpage, rootpage_number) =
+                        get_table_rootpage(&args[1], &table_name)?;
+                    let table_pages = get_table_pages(&table_rootpage, rootpage_number);
+                    println!("{:?}", table_pages);
+
+                    if table_rootpage[0] == 0x0d {
+                        for item in &select.projection {
+                            if let SelectItem::UnnamedExpr(expr) = &item {
+                                match expr {
+                                    Expr::Identifier(ident) => {
+                                        let column_idx = columns
+                                            .iter()
+                                            .position(|c| *c == ident.value)
+                                            .ok_or(anyhow!(
+                                                "Column {} not found in table {}",
+                                                ident.value,
+                                                table_name
+                                            ))?;
+                                        column_indexes.push(column_idx);
+                                    }
+                                    Expr::Function(..) => {
+                                        let count = parse_int(&table_rootpage[3..5]);
+                                        println!("count: {}", count);
+                                        return Ok(());
+                                    }
+                                    _ => bail!("Unsupported expression type"),
                                 }
-                                Expr::Function(..) => {
-                                    let count = parse_int(&table_page[3..5]);
-                                    println!("count: {}", count);
-                                    return Ok(());
-                                }
-                                _ => bail!("Unsupported expression type"),
                             }
                         }
+                        let data = get_table_columns_data(&table_rootpage, column_indexes)?
+                            .iter()
+                            .map(|row| row.join("|"))
+                            .collect::<Vec<_>>();
+                        println!("{}", data.join("\n"));
                     }
-                    let data = get_table_columns_data(&table_page, column_indexes)?
-                        .iter()
-                        .map(|row| row.join("|"))
-                        .collect::<Vec<_>>();
-                    println!("{}", data.join("\n"));
                 }
             }
         }
